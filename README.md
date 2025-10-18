@@ -33,13 +33,13 @@ python3 renew_hidencloud_playwright.py
 
 - Options utiles :
 
-  --dry            : mode non-destructif, n'effectue que le chargement et exporte les cookies (print JSON)
+  --dry         : mode non-destructif, n'effectue que le chargement et exporte les cookies (print JSON)
   
   --headful        : lancer le navigateur en mode visible (utile pour déboguer ou résoudre un challenge)
   
-  --use-config-cookies : injecter les cookies présents dans `config.json` avant la navigation
+  --use-config-cookies      : injecter les cookies présents dans `config.json` avant la navigation
 
-  --run-renew : 
+  --run-renew        : tente d'exécuter la logique de renouvellement via Playwright
 
 Exemples :
 
