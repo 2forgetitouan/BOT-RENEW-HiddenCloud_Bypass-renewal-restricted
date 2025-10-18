@@ -1,0 +1,32 @@
+{
+  "service_manage_url": "https://dash.hidencloud.com/service/74168/manage",
+  "base_url": "https://dash.hidencloud.com",
+  "cookies": {
+    "hidencloud_session": "eyJpdiI6IlQ2MnZ2bzRlYkErbHVwcExsTy8rU3c9PSIsInZhbHVlIjoiSHQ0NzltN2NJU2R2bENkYVpKN09RT1h0T25rUW1sRVUxOGQvWXEwNjBRbDhLWVFvWXZCSU5CemxPTVRvMTNUNlhtUWl0VEJCSCtuVHJVb2pHRGduR2dSR0YxYnNHa1FTV1Rvb0ljM2VqdGtoZi8rQ3g0Ykt6amtMaExxQW5UOEIiLCJtYWMiOiI5ZDk5ZGM4NjgzM2RlNDA2YTk3ZTI3ZGRhMTYxZmZkMDdmNzQ1YTdlNjMyYmM2ZjA2ODc2ZjAxNjIwZjY3NWViIiwidGFnIjoiIn0%3D",
+    "remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d": "eyJpdiI6IlNGYW9CZm9BV0hVd1dUOEE5WDcraGc9PSIsInZhbHVlIjoiUEJUMmhYMUFhMTZsZ0pNZ1dqNWkzU0E3elNYV3gvcVJybnFCRENuVExJYXZEZHFhMjg4MlRBRWh2SXpxN1VqLzhkenBGc1htRjNJK0x3WDBzbWtxZEpKNC9GWmRaTGJpMXlJUlBUdndkNVh6R0NEcitOZzhCOG5MTVhWWTlubkQ3OUpIUWh3cHdCTHNBQTBpNzN5dC9Dc1E1NmZWUGdjN1dmbDUrK095T0NKQXJxcEpvY0gvUW95UFkyd2hpRTIwZndFV2JsdGsveHlRS3NnMTVpVzBMN2ttRWcyMzZIQ0YzV3BnQi9LN3JMQT0iLCJtYWMiOiJjNDQyYTBmODg5MWZjNTJmODZmODMxOGQwNDU5NWIxZDM4MTFkNDQ4MTNlNWVkOWU2NThhNWNlOWM3ZDE0ZDQ5IiwidGFnIjoiIn0%3D",
+    "XSRF-TOKEN": "eyJpdiI6IlVCa3pFZ2ZRK1prakxFMFhRbytPcHc9PSIsInZhbHVlIjoicDZzL25vYUthTkVJdExRdHdhVkRjUWppL3lnaTNFcFV4QmVmaDhqMkpjd3ViZHlEMnZJbWl1cG5PeTBldWJvSFBPckgzZ2w2S3d1QTZWR1cxd2p6K0tlVDh5M2t2dkcxK3pjT1VwZzBaZnVYMVNkU1hxRjVVTkkwNzBuRjZWcHciLCJtYWMiOiJjNWJjYTkxNGMwZmYzNzA5NTRlMzg4MThiMmY1OWVjYzcxOGQ2MDcyNGZlZmI3YzMzNzlkOWVjODc0ZDNlYWM5IiwidGFnIjoiIn0%3D",
+    "hc_cf_turnstile": "eyJpdiI6IjFzaSsxQ1B5SGVlZ2ZnZFZvREFoYmc9PSIsInZhbHVlIjoieWxuYXYxODRiZ2Y1aXcvcTVPRG1uZERCRkZYenI1emF0MHYzdjJSYVlmOU5BelpzdlhFUi9udGxGT3R0NXlPNmh3K0hsK3JNV0FXZ0NzT1JFRHBsc1V4ek8zSm9vak1OcFBJYlZlcHB4RGlJSkxodjVrVEVRWGtZb3hNTzBNVHQiLCJtYWMiOiI0ODAwNDJmZTMzOGVlYTk2ZWE0NWE0MWNiZTI2MzYyMTE2NjEzODNkNTk4ODJjMzRkNmYyOTc1Yjg5Y2RkNGZmIiwidGFnIjoiIn0%3D",
+    "_gcl_au": "1.1.1135539480.1760728881",
+    "_ga": "GA1.1.1482955551.1760728881",
+    "_ga_W7JJ5G9D4Z": "GS2.1.s1760728881$o1$g0$t1760728881$j60$l0$h0",
+    "cf_clearance": "XsBR9sVTn7iaO0RCp.rolVJ1wbTM75KDMjEk1JLvMKs-1760728883-1.2.1.1-7jnOA5qdBcmxun1gpShIvWJVKR7ILO5kyCQHzeXjBwOt5kj1fzdVvpqW8h6Uln2d0XpTcCF.yaXuvHZrYH2lSvYF9hI8Nnv31KARZSz.WBA0qAB9BS.MqxhOvei0pRBf3obxQy9tH3yIjKm5b02W7NkhXfQg9NgAsp9Dpey9oTneHcpStwsfj_A_LQQx8tXA9BNsDVg3v7xn0e3YEkoaJsnEth2EmsNeIyKvPsVfBfo"
+  },
+  "discord_webhook": "https://discord.com/api/webhooks/1428804863487250614/afE-6YYe5p47k12gBVh22OS-DF2CF079XGpUq7Rk1wIiftajwNNLOQQ1hhMaNxEjybUN",
+  "paths": {
+    "workdir": "/home/titouan/Documents/Bot_HiddenCloud/",
+    "last_run_file": "/home/titouan/Documents/Bot_HiddenCloud/last_renew_ts.txt",
+    "log_file": "/home/titouan/Documents/Bot_HiddenCloud/renew.log"
+  },
+  "min_days_between_runs": 6,
+  "use_playwright": true,
+  "selectors": {
+    "renew": "button[data-modal-target=\"renewService-74168\"]",
+    "create_invoice": "button[data-modal-hide=\"renewService-74168\"][type=\"submit\"]",
+    "pay": "button:has-text(\"Payer\")"
+  },
+  "http": {
+    "timeout": 20,
+    "retries": 3,
+    "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+  }
+}
