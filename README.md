@@ -39,6 +39,8 @@ python3 renew_hidencloud_playwright.py
   
   --use-config-cookies : injecter les cookies présents dans `config.json` avant la navigation
 
+  --run-renew : 
+
 Exemples :
 
 ```bash
