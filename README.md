@@ -45,8 +45,8 @@ Exemples :
 # Dry-run (n'effectue pas de clics)
 python3 renew_hidencloud_playwright.py --dry
 
-# Lancer en visible et exécuter la séquence (utile si tu dois résoudre manuellement un challenge)
+# Lancer en visible et exécuter la séquence
 python3 renew_hidencloud_playwright.py --headful --use-config-cookies
 ```
 
-Notifications : le script envoie des notifications dans Discord (webhook) pour : démarrage, éléments manquants, challenge détecté, et si le renouvellement est restreint (message "Renewal Restricted"). Assure-toi que `discord_webhook` est configuré dans `config.json`.
+Notifications : le script envoie des notifications dans Discord (webhook) pour : démarrage, éléments manquants, challenge détecté, et si le renouvellement est restreint (message "Renewal Restricted").
