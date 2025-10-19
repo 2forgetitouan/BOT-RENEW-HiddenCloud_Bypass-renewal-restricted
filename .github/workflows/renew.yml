@@ -2,22 +2,23 @@ name: HidenCloud renew (scheduled)
 
 on:
   schedule:
-    # Runs daily at 03:00 UTC; script itself enforces min_days_between_runs=6
-    - cron: '0 3 * * *'
-  workflow_dispatch: {}
+    - cron: '0 11 * * *'  # Tous les jours à ~12h heure FR (11h UTC)
+  workflow_dispatch: {}  # Lancement manuel possible
 
 jobs:
   renew:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+    steps:
+      - name: 📦 Checkout du dépôt
+        uses: actions/checkout@v4
+
+      - name: 🐍 Configuration Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Cache pip
+      - name: ⚡ Cache pip
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
@@ -25,27 +26,45 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - name: Install dependencies
+      - name: 📦 Installer les dépendances
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Install Playwright browsers
-        run: |
-          python -m playwright install --with-deps
+      - name: 🌐 Installer les navigateurs Playwright
+        run: python -m playwright install --with-deps
 
-      - name: Write config.json from secret (if provided)
+      - name: 🧩 Écrire config.json depuis le secret
         run: |
-          if [ -n "$CONFIG_JSON" ]; then
-            echo "$CONFIG_JSON" > config.json
+          if [ -z "$CONFIG_JSON" ]; then
+            echo "❌ ERREUR : Le secret CONFIG_JSON n'est pas défini !" >&2
+            exit 1
           fi
+          echo "$CONFIG_JSON" > config.json
         env:
           CONFIG_JSON: ${{ secrets.CONFIG_JSON }}
 
-      - name: Run renewal (headless)
+      - name: 🚀 Exécuter le renouvellement
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          # set USE_PLAYWRIGHT to 1 to force playwright path
           USE_PLAYWRIGHT: '1'
         run: |
-          python3 renew_hidencloud_playwright.py --run-renew --use-config-cookies
+          echo "=== DÉBUT DU RENOUVELLEMENT ==="
+          python3 renew_hidencloud_playwright.py --run-renew --use-config-cookies || {
+            echo "❌ Le script a échoué (code $?)"
+            exit 1
+          }
+          echo "=== FIN DU RENOUVELLEMENT ==="
+
+      - name: 📜 Afficher les logs
+        if: always()
+        run: |
+          echo "---- renew.log ----"
+          cat renew.log || echo "Aucun log trouvé"
+
+      - name: 📂 Sauvegarder les logs comme artefact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: renew-logs
+          path: renew.log
