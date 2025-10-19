@@ -26,13 +26,23 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - name: 📦 Installer les dépendances
+      - name: 📦 Installer les dépendances Python
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: 🧱 Installer les dépendances système Playwright
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2t64 libx264-dev libffi8 libnss3 libxss1 \
+            libatk-bridge2.0-0 libgtk-3-0 libdrm2 libgbm1 libxdamage1 \
+            libxrandr2 libxtst6 libpango-1.0-0 libcairo2 libxkbcommon0 \
+            fonts-liberation libxcomposite1 libxshmfence1 libglu1-mesa \
+            libgl1 libegl1 libxcb1 xvfb
+
       - name: 🌐 Installer les navigateurs Playwright
-        run: python -m playwright install --with-deps
+        run: python -m playwright install chromium
 
       - name: 🧩 Écrire config.json depuis le secret
         run: |
