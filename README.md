@@ -68,7 +68,7 @@ Le script expose les options suivantes (toutes documentées ci-dessous) :
 
 - `--pause` : Mettre une pause après le chargement (utile en combinaison avec `--headful` pour inspection manuelle).
 
-- `--bypass-restriction` : Forcer la poursuite de la séquence même si le site affiche "Renewal Restricted" ou un message équivalent. DANGEREUX : à n'utiliser que si la conséquence est pleinement comprise.
+- `--bypass-restriction` : Forcer la poursuite de la séquence même si le site affiche "Renewal Restricted" ou un message équivalent.
 
 - `--confirm-pay` : Autoriser explicitement le clic final "Payer". Par défaut, si le montant de la facture est détecté > 0, le script refuse d'exécuter le paiement et notifie. `--confirm-pay` doit être fourni pour permettre le paiement automatique.
 
