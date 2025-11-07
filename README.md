@@ -72,7 +72,7 @@ Exemple minimal :
 - `--run-renew` : exécute la séquence (clics). Sans ce flag le script charge la page et exporte les cookies.
 - `--confirm-pay` : autorise le clic final "Payer" si le montant détecté est > 0.
 - `--headful` : lance le navigateur en mode visible (utile pour intervention manuelle).
-- `--bypass-restriction` : continue malgré une détection "Renewal Restricted" (dangerous).
+- `--bypass-restriction` : continue malgré une détection "Renewal Restricted".
 - `--timeout-ms <ms>` : timeout de navigation (défaut 60000).
 - `--screen` : prend des captures à chaque étape et les envoie au webhook (si configuré).
 - `--debug` : pause interactive avant chaque étape (utile combiné à `--headful`).
