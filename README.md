@@ -1,4 +1,4 @@
-# Bot-HidenCloud — Automatisation Playwright
+# Bot-HidenCloud --- Automatisation Playwright
 
 Ce dépôt contient un script Python (Playwright) qui automatise le renouvellement d'un service HidenCloud : ouvrir le tableau de bord, cliquer sur "Renouveler", créer la facture et, si explicitement autorisé, déclencher le paiement.
 
@@ -102,7 +102,7 @@ python3 renew_hidencloud_playwright.py
 python3 renew_hidencloud_playwright.py --run-renew --headful --debug --screen
 ```
 
-- Lancer automatiquement et autoriser le paiement (DANGEREUX) :
+- Lancer automatiquement et autoriser le paiement :
 
 ```bash
 python3 renew_hidencloud_playwright.py --run-renew --confirm-pay --bypass-restriction
@@ -131,11 +131,12 @@ Si vous souhaitez :
 - n'envoyer que les captures finales
 - uploader les captures vers un stockage (S3/GCS)
 - confirmation via Discord
+- autre idée
 
-Ouvre une issue ou indique la modification souhaitée — je peux l'ajouter.
+Ouvrez une issue ou indiquez la modification souhaitée, je peux l’ajouter.
 
 ---
 
-Merci d'utiliser ce script; utilisez les flags dangereux avec prudence.
+Merci d'utiliser ce script; utilisez avec prudence.
 
 
