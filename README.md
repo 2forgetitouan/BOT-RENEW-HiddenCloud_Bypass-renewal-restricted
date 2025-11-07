@@ -38,10 +38,9 @@ python -m playwright install --with-deps
 Sur certaines images serveur il peut être nécessaire d'installer des paquets système pour Chromium (ex: libnss3, libatk1.0-0, libxss1, libasound2).
 
 ### Windows
+Installer Python [ici](https://www.python.org/downloads/) si ce n’est pas déjà fait.
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 python -m playwright install
