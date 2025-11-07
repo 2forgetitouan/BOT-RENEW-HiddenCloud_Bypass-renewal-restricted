@@ -19,6 +19,9 @@ from pathlib import Path
 import time
 import traceback
 import requests
+import os
+import tempfile
+import mimetypes
 
 from playwright.sync_api import sync_playwright
 
@@ -50,25 +53,120 @@ def log(msg, conf=None):
         pass
 
 
+def _map_status_color(status):
+    colors = {
+        'success': 0x0ECF5F,
+        'failure': 0xE82515,
+        'warning': 0xF1A60F,
+        'info': 0x3498DB,
+        None: 0x95A5A6
+    }
+    return colors.get(status, colors[None])
+
+
 def send_discord(content, conf=None):
+    """Envoie un message compact au webhook Discord.
+
+    Si content contient 'screenshots': list[str] alors les fichiers sont envoyés en attachments.
+    """
     try:
         webhook = None
         if conf:
             webhook = conf.get('discord_webhook')
         if not webhook:
             return
+
+        def _t(s, l):
+            try:
+                s = str(s)
+            except Exception:
+                s = ''
+            if len(s) <= l:
+                return s
+            return s[: l - 3] + '...'
+
+        # Minimal embed (shorter, moderne)
         if isinstance(content, str):
-            payload = {"content": content}
+            embed = {'title': _t('Notification', 80), 'description': _t(content, 400), 'color': _map_status_color('info')}
+            payload = {'embeds': [embed]}
         elif isinstance(content, dict):
-            # support simple embeds
-            if content.get('title') or content.get('description') or content.get('fields'):
-                embed = {"title": content.get('title', ''), "description": content.get('description', ''), "fields": content.get('fields', [])}
-                payload = {"embeds": [embed]}
-            else:
-                payload = content
+            title = _t(content.get('title') or content.get('heading') or 'Notification', 80)
+            desc = _t(content.get('description') or '', 400)
+            status = content.get('status') or content.get('level') or content.get('type')
+            color = _map_status_color(status if isinstance(status, str) else None)
+            embed = {'title': title, 'description': desc, 'color': color}
+            # small useful fields only
+            fields = []
+            if content.get('url'):
+                fields.append({'name': 'URL', 'value': _t(content.get('url'), 200), 'inline': False})
+            if content.get('amount') is not None:
+                fields.append({'name': 'Montant', 'value': _t(str(content.get('amount')), 50), 'inline': True})
+            if content.get('reason'):
+                fields.append({'name': 'Raison', 'value': _t(content.get('reason'), 120), 'inline': False})
+            if fields:
+                embed['fields'] = fields
+            payload = {'embeds': [embed]}
         else:
-            payload = {"content": str(content)}
-        r = requests.post(webhook, json=payload, timeout=10)
+            payload = {'content': _t(content, 400)}
+
+        # support screenshots attachments
+        screenshots = None
+        if isinstance(content, dict) and content.get('screenshots'):
+            screenshots = content.get('screenshots')
+
+        # deduplicate screenshots sent recently (avoid doubles)
+        global _LAST_SCREENSHOT_SEND
+        try:
+            _LAST_SCREENSHOT_SEND
+        except NameError:
+            _LAST_SCREENSHOT_SEND = {}
+
+        if screenshots:
+            # filter out screenshots sent in the last 30s
+            now_ts = time.time()
+            filtered = []
+            for p in screenshots:
+                last = _LAST_SCREENSHOT_SEND.get(p)
+                if last and now_ts - last < 30:
+                    continue
+                filtered.append(p)
+            screenshots = filtered
+            files = {}
+            multipart = {'payload_json': (None, json.dumps(payload))}
+            for i, path in enumerate(screenshots):
+                try:
+                    if not os.path.exists(path):
+                        continue
+                    key = f'file{i}'
+                    files[key] = (os.path.basename(path), open(path, 'rb'), mimetypes.guess_type(path)[0] or 'application/octet-stream')
+                except Exception:
+                    continue
+            # requests expects files as dict of name: (filename, fileobj, content_type)
+            files_payload = {k: v for k, v in files.items()}
+            # build files param merging payload_json
+            # Note: requests uses a tuple (name, filetuple)
+            files_param = {'payload_json': (None, json.dumps(payload))}
+            files_param.update({k: (v[0], v[1], v[2]) for k, v in files.items()})
+            r = requests.post(webhook, files=files_param, timeout=20)
+            # close opened file objects
+            try:
+                for v in files.values():
+                    try:
+                        v[1].close()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            # mark sent
+            if r.status_code < 400:
+                for p in screenshots:
+                    try:
+                        _LAST_SCREENSHOT_SEND[p] = time.time()
+                    except Exception:
+                        pass
+        else:
+            r = requests.post(webhook, json=payload, timeout=10)
+
         if r.status_code >= 400:
             log(f"Webhook error: {r.status_code} {r.text}", conf=conf)
     except Exception as e:
@@ -82,7 +180,83 @@ def save_cookies_output(cookies):
     print(json.dumps({'cookies': out}, indent=2))
 
 
-def main(dry=True, run_renew=False, headful=False, timeout_ms=60000, use_config_cookies=True, pause=False, bypass_restriction=False, confirm_pay=False):
+def _ensure_screens_dir():
+    d = Path(__file__).parent / 'screenshots'
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        d = Path(tempfile.gettempdir())
+    return d
+
+
+def capture_screenshot(page, label='screenshot'):
+    try:
+        d = _ensure_screens_dir()
+        fname = f"{int(time.time())}_{label}.png"
+        path = d / fname
+        # capture full page to show entire content
+        page.screenshot(path=str(path), full_page=True)
+        return str(path)
+    except Exception as e:
+        log(f"Erreur screenshot: {e}")
+        return None
+
+
+def debug_wait(step_name, debug=False, headful=False):
+    if not debug:
+        return
+    hint = ' (headful: vous pouvez interagir avec la page)' if headful else ''
+    try:
+        input(f"DEBUG: étape '{step_name}'. Appuyez sur Entrée pour continuer{hint}...")
+    except Exception:
+        # si non interactif, fallback à un court délai
+        time.sleep(1)
+
+
+def _extract_amount_from_totals(page):
+    """Tente d'extraire le montant en ciblant les blocs 'Sous-total / Total' décrits par l'utilisateur."""
+    try:
+        # Chercher des lignes structurées: .space-y-3 .flex.justify-between -> label / value
+        try:
+            nodes = page.query_selector_all('.space-y-3 .flex.justify-between')
+            for n in nodes:
+                try:
+                    parts = n.query_selector_all('div')
+                    if len(parts) >= 2:
+                        label = (parts[0].text_content() or '').strip().lower()
+                        value = (parts[1].text_content() or '').strip()
+                        if 'total' in label or 'sous-total' in label or 'sous total' in label or 'total' in label:
+                            return value
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        # fallback: rechercher un élément contenant 'Total' puis récupérer son sibling
+        try:
+            el = page.query_selector("text=/Total|Sous-total|Sous total|Sous-total/i")
+            if el:
+                val = page.evaluate("el => { let s = el.nextElementSibling || el.parentElement.querySelector('div:last-child'); return s ? s.textContent : null}", el)
+                if val:
+                    return val.strip()
+        except Exception:
+            pass
+
+        # last resort: chercher le mot 'Total' dans le HTML et extraire le montant proche
+        try:
+            html = page.content() or ''
+            import re
+            m = re.search(r"(Total|Sous-total|Sous total)[\s\S]{0,60}?(€?\s?\d[0-9\s\.,]*\d)", html, re.I)
+            if m:
+                return m.group(2).strip()
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return None
+
+
+def main(run_renew=False, headful=False, timeout_ms=60000, use_config_cookies=True, bypass_restriction=False, confirm_pay=False, screen=False, debug=False):
     conf = load_config()
     manage_url = conf.get('service_manage_url')
     base = conf.get('base_url')
@@ -104,7 +278,7 @@ def main(dry=True, run_renew=False, headful=False, timeout_ms=60000, use_config_
         context = browser.new_context(**context_kwargs)
         page = context.new_page()
 
-        # inject cookies from config before navigation if requested
+        # inject cookies from config before navigation (always enabled by default)
         if use_config_cookies:
             try:
                 conf_cookies = conf.get('cookies', {}) or {}
@@ -128,11 +302,21 @@ def main(dry=True, run_renew=False, headful=False, timeout_ms=60000, use_config_
         try:
             # tente un goto rapide sur domcontentloaded puis attend networkidle si possible
             page.goto(manage_url, timeout=timeout_ms, wait_until='domcontentloaded')
+            # si bypass_restriction, réduire l'attente pour aller plus vite
             try:
-                page.wait_for_load_state('networkidle', timeout=min(timeout_ms, 60000))
+                if bypass_restriction:
+                    page.wait_for_load_state('load', timeout=min(5000, timeout_ms))
+                else:
+                    page.wait_for_load_state('networkidle', timeout=min(timeout_ms, 60000))
             except Exception:
-                # fallback: wait a short time
-                page.wait_for_timeout(2000)
+                # fallback: wait un court temps
+                page.wait_for_timeout(1000 if bypass_restriction else 2000)
+            # capture après chargement
+            if screen:
+                pth = capture_screenshot(page, 'loaded')
+                if pth:
+                    send_discord({'title': 'Page chargée', 'description': 'Page ouverte', 'status': 'info', 'url': page.url, 'screenshots': [pth]}, conf=conf)
+            debug_wait('after_goto', debug=debug, headful=headful)
         except Exception as e:
             print('Navigation erreur / timeout:', e)
 
@@ -147,14 +331,19 @@ def main(dry=True, run_renew=False, headful=False, timeout_ms=60000, use_config_
         cookies = context.cookies()
         save_cookies_output(cookies)
 
-        # si on execute l'option run_renew (ou si l'appel se fait sans --dry), tenter d'appuyer sur Renouveler -> Créer une facture -> Payer
+        # si on execute l'option run_renew, tenter d'appuyer sur Renouveler -> Créer une facture -> Payer
         if run_renew:
             try:
+                # état/resultat du processus (sera envoyé à Discord à la fin)
+                renew_status = {'status': 'unknown', 'reason': None, 'url': page.url, 'amount': None}
+                amt_val = None
+
                 # vérifier si la page affiche un challenge qui bloquerait (ex: Security Verification)
                 page_html = page.content().lower()
                 if 'security verification' in page_html or 'cf_chl_prog' in page_html or 'turnstile' in page_html:
                     log('La page semble afficher un challenge de sécurité (403/JS). Abandon de run-renew.', conf=conf)
-                    send_discord({'title': 'Renouvellement: challenge', 'description': 'La page affiche un challenge de sécurité (403/JS). Intervention requise.'}, conf=conf)
+                    send_discord({'title': 'Renouvellement: challenge', 'description': 'La page affiche un challenge de sécurité (403/JS). Intervention requise.', 'status': 'failure', 'url': page.url}, conf=conf)
+                    renew_status.update({'status': 'failed', 'reason': 'security_challenge'})
                 else:
                     sel_conf = conf.get('selectors', {}) or {}
                     seq = [
@@ -162,19 +351,24 @@ def main(dry=True, run_renew=False, headful=False, timeout_ms=60000, use_config_
                         ('create_invoice', sel_conf.get('create_invoice') or 'text=/Créer une facture|Create Invoice/i'),
                         ('pay', sel_conf.get('pay') or 'text=/Payer|Pay/i'),
                     ]
+                    selector_timeout_default = 5000
+                    selector_timeout_bypass = 2000
                     for name, selector in seq:
                         try:
                             print(f"Tentative click '{name}' avec sélecteur: {selector}")
                             # attendre la présence de l'élément (timeout réduit)
                             el = None
+                            to = selector_timeout_bypass if bypass_restriction else selector_timeout_default
                             try:
-                                el = page.wait_for_selector(selector, timeout=5000)
+                                el = page.wait_for_selector(selector, timeout=to)
                             except Exception:
                                 # fallback: query_selector sans attendre
                                 try:
                                     el = page.query_selector(selector)
                                 except Exception:
                                     el = None
+                            # debug pause before interacting
+                            debug_wait(f'before_click:{name}', debug=debug, headful=headful)
                             # fallback supplémentaires si élément pas trouvé
                             if not el:
                                 # essayer une recherche par texte (différentes variantes)
@@ -201,9 +395,13 @@ def main(dry=True, run_renew=False, headful=False, timeout_ms=60000, use_config_
                                 except Exception:
                                     el = None
                             if not el:
-                                # dernier recours : inspecter tout le DOM pour occurrences du mot et logguer
+                                # dernier recours : inspecter un extrait du DOM pour occurrences du mot et logguer
                                 try:
-                                    body_text = page.inner_text('body')
+                                    # limiter la taille lue pour aller plus vite en bypass
+                                    if bypass_restriction:
+                                        body_text = (page.content() or '')[:4000]
+                                    else:
+                                        body_text = page.inner_text('body')
                                 except Exception:
                                     body_text = (page.content() or '')[:2000]
                                 # log excerpt around 'renouvel'
@@ -219,7 +417,7 @@ def main(dry=True, run_renew=False, headful=False, timeout_ms=60000, use_config_
                                     log(f"Élément '{name}' introuvable mais le mot 'renouvel' apparaît dans la page. Extrait: {snippet}", conf=conf)
                                 else:
                                     log(f"Élément '{name}' introuvable avec le sélecteur/heuristique.", conf=conf)
-                                    send_discord({'title': f"Renouvellement: élément introuvable", 'description': f"'{name}' introuvable (sélecteur: {selector})"}, conf=conf)
+                                    send_discord({'title': f"Renouvellement: élément introuvable", 'description': f"'{name}' introuvable (sélecteur: {selector})", 'status': 'warning', 'url': page.url}, conf=conf)
                                 continue
                             # click et attendre réseau / petit délai
                             try:
@@ -231,43 +429,131 @@ def main(dry=True, run_renew=False, headful=False, timeout_ms=60000, use_config_
                                 except Exception as e:
                                     print(f"Impossible de cliquer sur '{name}': {e}")
                                     continue
-                            # attendre navigation ou réseau bref
+                            # attendre navigation ou réseau bref (plus court si bypass)
                             try:
-                                page.wait_for_load_state('networkidle', timeout=8000)
+                                if bypass_restriction:
+                                    page.wait_for_load_state('load', timeout=5000)
+                                else:
+                                    page.wait_for_load_state('networkidle', timeout=8000)
                             except Exception:
-                                page.wait_for_timeout(1200)
+                                page.wait_for_timeout(800 if bypass_restriction else 1200)
                             log(f"Après click '{name}', URL: {page.url}", conf=conf)
                             # dump court pour debug
-                            snippet = page.content()[:1200]
+                            snippet = (page.content() or '')[:1200]
                             log(f"Snippet après '{name}': {snippet[:800]}", conf=conf)
+                            # capture écran après click si demandé
+                            if screen:
+                                pth = capture_screenshot(page, name)
+                                if pth:
+                                    send_discord({'title': f"Étape {name}", 'description': f"Étape {name} effectuée", 'status': 'info', 'url': page.url, 'screenshots': [pth]}, conf=conf)
+                            debug_wait(f'after_click:{name}', debug=debug, headful=headful)
+                            # si on vient de cliquer sur 'pay', considérer le workflow comme réussi
+                            if name == 'pay':
+                                renew_status.update({'status': 'success', 'reason': 'paid', 'url': page.url})
+                                try:
+                                    extras = {'title': 'Paiement déclenché', 'description': 'Bouton Payer cliqué', 'status': 'success', 'url': page.url}
+                                    if screen:
+                                        p = capture_screenshot(page, 'paid')
+                                        if p:
+                                            extras['screenshots'] = [p]
+                                    send_discord(extras, conf=conf)
+                                except Exception:
+                                    pass
+                                break
                             # Si on vient de créer une facture, extraire le montant et décider du paiement
                             if name == 'create_invoice':
                                 # tenter d'extraire un montant (0.00, 0,00, €)
                                 amt_text = ''
+                                # tentative ciblée sur la structure 'Sous-total / Total' (plus fiable)
+                                try:
+                                    found = _extract_amount_from_totals(page)
+                                    if found:
+                                        amt_text = found
+                                except Exception:
+                                    pass
                                 try:
                                     # chercher éléments usuels sur la page facture
-                                    # ex: .invoice-amount, .amount, strong, .price
-                                    for sel_amt in ['.invoice-amount', '.amount', '.price', 'strong', '.total']:
+                                    # ex: .invoice-amount, .amount, .price, .total, strong
+                                    import re
+                                    # prefer explicit amount containers before generic tags like <strong>
+                                    for sel_amt in ['.invoice-amount', '.amount', '.price', '.total', 'strong']:
                                         try:
                                             node_amt = page.query_selector(sel_amt)
                                             if node_amt:
-                                                amt_text = (node_amt.text_content() or '').strip()
-                                                if amt_text:
+                                                candidate = (node_amt.text_content() or '').strip()
+                                                # n'accepter que si on trouve au moins un chiffre ou un symbole monétaire
+                                                if not candidate:
+                                                    continue
+                                                if re.search(r"\d", candidate) or '€' in candidate or '$' in candidate or '£' in candidate:
+                                                    amt_text = candidate
                                                     break
+                                                # sinon ignorer (ex: titre de la page comme 'HidenCloud™')
                                         except Exception:
                                             pass
                                 except Exception:
                                     pass
-                                # fallback: rechercher motif monétaire dans le snippet
+                                # fallback: recherche plus robuste dans tout le HTML
                                 if not amt_text:
-                                    import re
-                                    m = re.search(r"(0[,.]0{1,2}|\d+[,.]\d{2})\s*€", snippet)
-                                    if m:
-                                        amt_text = m.group(0)
-                                    else:
-                                        m2 = re.search(r"(0[,.]0{1,2}|\d+[,.]\d{2})", snippet)
-                                        if m2:
-                                            amt_text = m2.group(0)
+                                    try:
+                                        import re
+                                        page_full = page.content() or ''
+                                        low = page_full.lower()
+                                        # priorité: mentions explicites de gratuité
+                                        if re.search(r"\b(gratuit|gratuitement|free|no charge|without charge)\b", low, re.I):
+                                            amt_text = '0.00'
+                                        else:
+                                            # collecter candidats monétaires : formats type 123.45 ou 1 234,56 ou avec symbole € $ £
+                                            candidates = []
+                                            # pattern qui capture nombre + optional currency symbol
+                                            pat = re.compile(r"(?P<num>\d{1,3}(?:[\d\s\.\,]*\d)?[\.,]\d{2})\s*(?P<cur>€|eur|\$|usd|£|gbp)?", re.I)
+                                            for m in pat.finditer(page_full):
+                                                idx = m.start()
+                                                txt = m.group(0).strip()
+                                                candidates.append((idx, txt))
+
+                                            # pattern with explicit symbol before amount (e.g. € 12.34)
+                                            pat2 = re.compile(r"(?P<cur>€|\$|£)\s*(?P<num>\d+[\.,]\d{2})", re.I)
+                                            for m in pat2.finditer(page_full):
+                                                idx = m.start()
+                                                txt = m.group(0).strip()
+                                                candidates.append((idx, txt))
+
+                                            # si on a des candidats, choisir celui proche d'un label utile
+                                            chosen = None
+                                            if candidates:
+                                                # labels utiles
+                                                labels = ['total', 'montant', 'price', 'amount', 'due', 'subtotal', 'balance', 'prix']
+                                                best_score = None
+                                                for idx, txt in candidates:
+                                                    score = 999999
+                                                    # cherche label proximité +/- 120 chars
+                                                    window_start = max(0, idx - 120)
+                                                    window_end = idx + 120
+                                                    context = page_full[window_start:window_end].lower()
+                                                    for lab in labels:
+                                                        pos = context.find(lab)
+                                                        if pos != -1:
+                                                            # distance to center
+                                                            dist = abs((window_start + pos) - idx)
+                                                            if dist < score:
+                                                                score = dist
+                                                    # si aucun label trouvé, use default large score
+                                                    if best_score is None or score < best_score:
+                                                        best_score = score
+                                                        chosen = txt
+                                                amt_text = chosen
+                                            else:
+                                                # dernier recours: chercher motifs simples dans snippet
+                                                m = re.search(r"(0[,.]0{1,2}|\d+[,.]\d{2})\s*€", snippet)
+                                                if m:
+                                                    amt_text = m.group(0)
+                                                else:
+                                                    m2 = re.search(r"(0[,.]0{1,2}|\d+[,.]\d{2})", snippet)
+                                                    if m2:
+                                                        amt_text = m2.group(0)
+                                    except Exception:
+                                        # si tout échoue, ne pas crash
+                                        amt_text = ''
                                 log(f"Montant détecté facture (raw): '{amt_text}'", conf=conf)
                                 # Normaliser et décider
                                 def parse_amount(s):
@@ -286,14 +572,35 @@ def main(dry=True, run_renew=False, headful=False, timeout_ms=60000, use_config_
                                 except Exception:
                                     pass
                                 amt_val = parse_amount(amt_text)
+                                renew_status['amount'] = amt_val
                                 if amt_val is None:
                                     log('Impossible de déterminer le montant de la facture, arrêt par sécurité.', conf=conf)
-                                    send_discord({'title': 'Renouvellement: montant inconnu', 'description': 'Impossible de déterminer le montant de la facture. Arrêt par sécurité.'}, conf=conf)
+                                    extras = {'title': 'Montant inconnu', 'description': 'Impossible de déterminer le montant — arrêt par sécurité.', 'status': 'failure', 'url': page.url}
+                                    if screen:
+                                        p = capture_screenshot(page, 'amount_unknown')
+                                        if p:
+                                            extras['screenshots'] = [p]
+                                    send_discord(extras, conf=conf)
+                                    renew_status.update({'status': 'failed', 'reason': 'amount_unknown'})
                                     break
                                 if amt_val > 0.0 and not confirm_pay:
                                     log(f"Facture non gratuite détectée ({amt_val}€) — paiement refusé sans --confirm-pay.", conf=conf)
-                                    send_discord({'title': 'Renouvellement: paiement refusé', 'description': f'Facture détectée: {amt_text} — pas de paiement automatique sans --confirm-pay.'}, conf=conf)
+                                    extras = {'title': 'Paiement requis', 'description': f'Facture détectée: {amt_text} — pas de paiement automatique sans --confirm-pay.', 'status': 'warning', 'amount': amt_text, 'url': page.url}
+                                    if screen:
+                                        p = capture_screenshot(page, 'payment_required')
+                                        if p:
+                                            extras['screenshots'] = [p]
+                                    send_discord(extras, conf=conf)
+                                    renew_status.update({'status': 'failed', 'reason': 'payment_required', 'amount': amt_val})
                                     break
+                                # si montant = 0 => on considère la création de facture comme succès (pas de paiement nécessaire)
+                                if amt_val == 0.0:
+                                    renew_status.update({'status': 'success', 'reason': 'free_invoice', 'amount': 0.0})
+                                    # capture si demandé
+                                    if screen:
+                                        p = capture_screenshot(page, 'free_invoice')
+                                        if p:
+                                            send_discord({'title': 'Facture gratuite', 'description': 'Facture gratuite détectée', 'status': 'success', 'url': page.url, 'screenshots': [p]}, conf=conf)
                             # Détecter message 'Renewal Restricted' avant et après le click renew
                             if name == 'renew':
                                 def detect_renewal_restricted(pg):
@@ -351,26 +658,63 @@ def main(dry=True, run_renew=False, headful=False, timeout_ms=60000, use_config_
                                 pre_found, pre_why = detect_renewal_restricted(page)
                                 if pre_found:
                                     log('Renewal Restricted détecté AVANT click renew (' + (pre_why or '') + ').', conf=conf)
-                                    send_discord({'title': 'Renouvellement restreint', 'description': 'Renewal Restricted détecté avant tentative.','fields':[{'name':'URL','value':page.url},{'name':'Raison','value':pre_why or ''}]}, conf=conf)
+                                    send_discord({'title': 'Renouvellement restreint', 'description': 'Renewal Restricted détecté avant tentative.', 'status': 'failure', 'url': page.url, 'reason': pre_why}, conf=conf)
+                                    renew_status.update({'status': 'failed', 'reason': f'renewal_restricted_before:{pre_why}'})
                                     if bypass_restriction:
                                         log('Bypass demandé: on poursuit malgré la restriction (dangerous).', conf=conf)
-                                        send_discord({'title': 'Renouvellement: bypass', 'description': 'Proceeding despite Renewal Restricted due to --bypass-restriction flag. Attention.'}, conf=conf)
+                                        send_discord({'title': 'Renouvellement: bypass', 'description': 'Proceeding despite Renewal Restricted due to --bypass-restriction flag. Attention.', 'status': 'warning', 'url': page.url}, conf=conf)
                                     else:
                                         break
                                 # after click, re-evaluate (page updated)
                                 post_found, post_why = detect_renewal_restricted(page)
                                 if post_found:
                                     log('Renewal Restricted détecté APRÈS click renew (' + (post_why or '') + ').', conf=conf)
-                                    send_discord({'title': 'Renouvellement restreint', 'description': 'Renewal Restricted détecté après tentative.','fields':[{'name':'URL','value':page.url},{'name':'Raison','value':post_why or ''}]}, conf=conf)
+                                    send_discord({'title': 'Renouvellement restreint', 'description': 'Renewal Restricted détecté après tentative.', 'status': 'failure', 'url': page.url, 'reason': post_why}, conf=conf)
+                                    renew_status.update({'status': 'failed', 'reason': f'renewal_restricted_after:{post_why}'})
                                     if bypass_restriction:
                                         log('Bypass demandé: on poursuit malgré la restriction (dangerous).', conf=conf)
-                                        send_discord({'title': 'Renouvellement: bypass', 'description': 'Proceeding despite Renewal Restricted due to --bypass-restriction flag. Attention.'}, conf=conf)
+                                        send_discord({'title': 'Renouvellement: bypass', 'description': 'Proceeding despite Renewal Restricted due to --bypass-restriction flag. Attention.', 'status': 'warning', 'url': page.url}, conf=conf)
                                     else:
                                         break
                         except Exception as e:
                             print(f"Erreur pendant le click '{name}': {e}")
+                            # marquer l'erreur et continuer la boucle
+                            renew_status.update({'status': 'failed', 'reason': f"click_error:{name}:{e}"})
+                            send_discord({'title': 'Renouvellement: erreur clic', 'description': f"Erreur pendant le click '{name}': {e}", 'status': 'failure', 'url': page.url}, conf=conf)
+                            # on laisse la boucle tenter la suite si possible
             except Exception as e:
                 print('Erreur pendant run_renew:', e)
+            # après la tentative: envoyer un résumé final selon le statut
+            try:
+                if renew_status.get('status') == 'success':
+                    send_discord({
+                        'title': '✅ Renouvellement réussi',
+                        'description': 'Le renouvellement a été effectué avec succès.',
+                        'status': 'success',
+                        'url': page.url,
+                        'amount': renew_status.get('amount'),
+                        'fields': [
+                            {'name': 'URL', 'value': page.url, 'inline': False},
+                            {'name': 'Montant', 'value': str(renew_status.get('amount') or '—'), 'inline': True},
+                        ]
+                    }, conf=conf)
+                else:
+                    # défaut: échec ou inconnu
+                    reason = renew_status.get('reason') or 'unknown'
+                    send_discord({
+                        'title': '❌ Erreur lors du renouvellement',
+                        'description': f"Le renouvellement a échoué ou n'a pas été effectué.",
+                        'status': 'failure',
+                        'url': page.url,
+                        'reason': reason,
+                        'json': {'renew_status': renew_status},
+                        'fields': [
+                            {'name': 'URL', 'value': page.url, 'inline': False},
+                            {'name': 'Raison', 'value': str(reason), 'inline': False},
+                        ]
+                    }, conf=conf)
+            except Exception:
+                pass
 
         browser.close()
     return 0
@@ -378,17 +722,14 @@ def main(dry=True, run_renew=False, headful=False, timeout_ms=60000, use_config_
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
-    ap.add_argument('--dry', action='store_true', help='Dry run: n effectue que le chargement et exporte cookies')
     ap.add_argument('--run-renew', action='store_true', help='Tenter d appuyer sur le bouton Renouveler (peut être destructif)')
     ap.add_argument('--headful', action='store_true', help='Lancer le navigateur en mode non-headless (utile pour debug/intervention)')
     ap.add_argument('--timeout-ms', type=int, default=60000, help='Timeout de navigation en ms')
-    ap.add_argument('--use-config-cookies', action='store_true', help='Injecter les cookies présents dans config.json dans le contexte Playwright')
-    ap.add_argument('--pause', action='store_true', help='Pause après chargement pour debug (headful conseillé)')
+    ap.add_argument('--debug', action='store_true', help='Mode debug: demande de validation avant chaque étape (conseillé avec --headful)')
+    ap.add_argument('--screen', action='store_true', help='Prendre des captures d écran à chaque étape et les envoyer au webhook Discord')
     ap.add_argument('--bypass-restriction', action='store_true', help='Tenter malgré Renewal Restricted (dangerous)')
     ap.add_argument('--confirm-pay', action='store_true', help='Autoriser le clic final Payer (nécessaire si montant > 0)')
     args = ap.parse_args()
-    # si aucun flag n'est fourni, on lance la séquence (non-dry) par défaut
-    if not any([args.dry, args.run_renew, args.headful, args.use_config_cookies, args.pause]):
-        args.run_renew = True
-    rc = main(dry=args.dry, run_renew=args.run_renew, headful=args.headful, timeout_ms=args.timeout_ms, use_config_cookies=args.use_config_cookies, pause=args.pause, bypass_restriction=args.bypass_restriction, confirm_pay=args.confirm_pay)
+    # Par défaut on injecte les cookies depuis config.json; il faut explicitement fournir --run-renew pour effectuer la séquence de paiement
+    rc = main(run_renew=args.run_renew, headful=args.headful, timeout_ms=args.timeout_ms, use_config_cookies=True, bypass_restriction=args.bypass_restriction, confirm_pay=args.confirm_pay, screen=args.screen, debug=args.debug)
     sys.exit(rc)
