@@ -111,7 +111,7 @@ python3 renew_hidencloud_playwright.py --run-renew --confirm-pay --bypass-restri
 ## Logs et diagnostic
 
 - Le script écrit sur stdout et dans le fichier `paths.log_file` si configuré.
-- Pour les challenges Cloudflare/Turnstile, lancez `--headful` et résolvez manuellement, puis relancez.
+- Normalement, il n’y a pas de challenge Cloudflare ou Turnstile. Si vous êtes bloqué, vérifiez les cookies dans `config.json`.
 
 ## Déploiement CI / service
 
