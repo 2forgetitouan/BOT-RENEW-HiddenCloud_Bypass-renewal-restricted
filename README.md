@@ -1,5 +1,8 @@
 # Bot-HidenCloud Auto-Renew  +  Bypass Renewal Restricted
 
+## Warning: This script may result in a permanent ban of your HidenCloud account.
+## Use it at your own risk. I am not responsible for your actions.
+
 ![Demo](pictures/output2.gif)
 
 Ce dépôt contient un script Python (Playwright) qui automatise le renouvellement d'un service HidenCloud : ouvrir le tableau de bord, cliquer sur "Renouveler", créer la facture et, si explicitement autorisé, déclencher le paiement.
