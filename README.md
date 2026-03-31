@@ -1,7 +1,6 @@
 # Bot-HidenCloud Auto-Renew  +  Bypass Renewal Restricted
 
-## Warning: This script may result in a permanent ban of your HidenCloud account.
-## Use it at your own risk. I am not responsible for your actions.
+## Warning: This script may result in a permanent ban of your HidenCloud account. Use it at your own risk. I am not responsible for your actions.
 
 ![Demo](pictures/output2.gif)
 
